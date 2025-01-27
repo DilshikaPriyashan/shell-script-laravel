@@ -81,7 +81,7 @@ function run_prompt_for_domain_if_required() {
 function run_package_installs() {
   apt update
   apt install -y git unzip apache2 curl mysql-server-8.0 php8.3 \
-  php8.3-fpm php8.3-curl php8.3-mbstring php8.3-ldap php8.3-xml php8.3-zip php8.3-gd php8.3-mysql
+  php8.3-fpm php8.3-curl php8.3-mbstring php8.3-ldap php8.3-xml php8.3-zip php8.3-gd php8.3-mysql php8.3-intl
 }
 
 # Set up database
