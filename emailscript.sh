@@ -156,7 +156,7 @@ function run_set_application_file_permissions() {
   cd "$EMAILSCRIPT_DIR" || exit
   chown -R "$SCRIPT_USER":www-data ./
   chmod -R 755 ./
-  chmod -R 775 bootstrap/cache public/uploads storage
+  chmod -R 775 bootstrap/cache storage
   chmod 740 .env
 
   # Tell git to ignore permission changes
@@ -265,4 +265,3 @@ info_msg "- Access URL: http://$CURRENT_IP/ or http://$DOMAIN/"
 info_msg "- EmailScript install path: $EMAILSCRIPT_DIR"
 info_msg "- Install script log: $LOGPATH"
 info_msg "---------------------------------------------------------------"
-      
