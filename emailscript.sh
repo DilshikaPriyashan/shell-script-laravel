@@ -142,10 +142,11 @@ function run_update_emailscript_env() {
   php artisan key:generate --no-interaction --force
 }
 
-# Run the emailscript database migrations for the first time
+# Run the emailscript database migrations and seeders for the first time
 function run_emailscript_database_migrations() {
   cd "$EMAILSCRIPT_DIR" || exit
   php artisan migrate --no-interaction --force
+  php artisan db:seed --no-interaction --force
 }
 
 # Set file and folder permissions
