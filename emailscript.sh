@@ -80,19 +80,19 @@ function run_prompt_for_domain_if_required() {
 # Install core system packages
 function run_package_installs() {
   apt update
-  apt install -y git unzip apache2 curl mysql-server-8.0 php8.3 \
+  apt install -y git unzip apache2 curl mariadb-server php8.3 \
   php8.3-fpm php8.3-curl php8.3-mbstring php8.3-ldap php8.3-xml php8.3-zip php8.3-gd php8.3-mysql php8.3-intl
 }
 
 # Set up database
 function run_database_setup() {
   # Ensure database service has started
-  systemctl start mysql.service
+  systemctl start mariadb.service
   sleep 3
 
   # Create the required user database, user and permissions in the database
   sudo mysql -u root --execute="CREATE DATABASE emailscript;"
-  sudo mysql -u root --execute="CREATE USER 'emailscript'@'localhost' IDENTIFIED WITH mysql_native_password BY '$DB_PASS';"
+  sudo mysql -u root --execute="CREATE USER 'emailscript'@'localhost' IDENTIFIED BY '$DB_PASS';"
   sudo mysql -u root --execute="GRANT ALL ON emailscript.* TO 'emailscript'@'localhost';FLUSH PRIVILEGES;"
 }
 
