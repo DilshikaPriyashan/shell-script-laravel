@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "This script installs a new Email Script instance on a fresh Ubuntu 24.04 server."
+echo "This script installs a new Email Script instance on Ubuntu 24.04 server."
 echo "This script does not ensure system security."
 echo ""
 
@@ -37,33 +37,43 @@ function info_msg() {
   echo "$1" | tee -a "$LOGPATH"
 }
 
+# Ask for user confirmation before proceeding
+function ask_confirmation() {
+  local message=$1
+  read -p "$message (y/n): " CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    error_out "Operation aborted by user."
+  fi
+}
+
 # Run some checks before installation to help prevent messing up an existing
 # web-server setup.
 function run_pre_install_checks() {
   # Check we're running as root and exit if not
-  if [[ $EUID -gt 0 ]]
-  then
+  if [[ $EUID -gt 0 ]]; then
     error_out "This script must be ran with root/sudo privileges"
   fi
 
-  # Check if Apache appears to be installed and exit if so
-  if [ -d "/etc/apache2/sites-enabled" ]
-  then
-    error_out "This script is intended for a fresh server install, existing apache config found, aborting install"
+  # Check if Apache is installed and ask for confirmation to proceed
+  if [ -d "/etc/apache2/sites-enabled" ]; then
+    ask_confirmation "Apache is already installed. Do you want to proceed? Existing configurations may be overwritten."
   fi
 
-  # Check if MySQL appears to be installed and exit if so
-  if [ -d "/var/lib/mysql" ]
-  then
-    error_out "This script is intended for a fresh server install, existing MySQL data found, aborting install"
+  # Check if MySQL is installed and ask for confirmation to proceed
+  if [ -d "/var/lib/mysql" ]; then
+    ask_confirmation "MySQL is already installed. Do you want to proceed? Existing databases may be affected."
+  fi
+
+  # Check if PHP is installed and ask for confirmation to proceed
+  if dpkg -l | grep -q 'php8.3'; then
+    ask_confirmation "PHP 8.3 is already installed. Do you want to proceed?"
   fi
 }
 
 # Fetch domain to use from first provided parameter,
 # Otherwise request the user to input their domain
 function run_prompt_for_domain_if_required() {
-  if [ -z "$DOMAIN" ]
-  then
+  if [ -z "$DOMAIN" ]; then
     info_msg ""
     info_msg "Enter the domain (or IP if not using a domain) you want to host emailscript on and press [ENTER]."
     info_msg "Examples: my-site.com or docs.my-site.com or ${CURRENT_IP}"
@@ -71,17 +81,21 @@ function run_prompt_for_domain_if_required() {
   fi
 
   # Error out if no domain was provided
-  if [ -z "$DOMAIN" ]
-  then
+  if [ -z "$DOMAIN" ]; then
     error_out "A domain must be provided to run this script"
   fi
 }
 
 # Install core system packages
 function run_package_installs() {
-  apt update
-  apt install -y git unzip apache2 curl mariadb-server php8.3 \
-  php8.3-fpm php8.3-curl php8.3-mbstring php8.3-ldap php8.3-xml php8.3-zip php8.3-gd php8.3-mysql php8.3-intl
+  # Check if packages are already installed
+  if ! dpkg -l | grep -q 'apache2\|mariadb-server\|php8.3'; then
+    apt update
+    apt install -y git unzip apache2 curl mariadb-server php8.3 \
+    php8.3-fpm php8.3-curl php8.3-mbstring php8.3-ldap php8.3-xml php8.3-zip php8.3-gd php8.3-mysql php8.3-intl
+  else
+    info_msg "Required packages are already installed, skipping package installation."
+  fi
 }
 
 # Set up database
@@ -90,63 +104,87 @@ function run_database_setup() {
   systemctl start mariadb.service
   sleep 3
 
-  # Create the required user database, user and permissions in the database
-  sudo mysql -u root --execute="CREATE DATABASE emailscript;"
-  sudo mysql -u root --execute="CREATE USER 'emailscript'@'localhost' IDENTIFIED BY '$DB_PASS';"
-  sudo mysql -u root --execute="GRANT ALL ON emailscript.* TO 'emailscript'@'localhost';FLUSH PRIVILEGES;"
+  # Check if the database and user already exist
+  if ! sudo mysql -u root -e "USE emailscript;" 2>/dev/null; then
+    # Create the required user database, user and permissions in the database
+    sudo mysql -u root --execute="CREATE DATABASE emailscript;"
+    sudo mysql -u root --execute="CREATE USER 'emailscript'@'localhost' IDENTIFIED BY '$DB_PASS';"
+    sudo mysql -u root --execute="GRANT ALL ON emailscript.* TO 'emailscript'@'localhost';FLUSH PRIVILEGES;"
+  else
+    info_msg "Database and user already exist, skipping database setup."
+  fi
 }
 
 # Download emailscript
 function run_emailscript_download() {
-  cd /var/www || exit
-  git clone https://github.com/DilshikaPriyashan/test-email-script.git --branch master --single-branch emailscript
+  if [ ! -d "$EMAILSCRIPT_DIR" ]; then
+    cd /var/www || exit
+    git clone https://github.com/DilshikaPriyashan/test-email-script.git --branch master --single-branch emailscript
+  else
+    info_msg "EmailScript directory already exists, skipping download."
+  fi
 }
 
 # Install composer
 function run_install_composer() {
-  EXPECTED_CHECKSUM="$(php -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
-  php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-  ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+  if ! command -v composer &> /dev/null; then
+    EXPECTED_CHECKSUM="$(php -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
+    php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+    ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
 
-  if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]
-  then
-      >&2 echo 'ERROR: Invalid composer installer checksum'
-      rm composer-setup.php
-      exit 1
+    if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+        >&2 echo 'ERROR: Invalid composer installer checksum'
+        rm composer-setup.php
+        exit 1
+    fi
+
+    php composer-setup.php --quiet
+    rm composer-setup.php
+
+    # Move composer to global installation
+    mv composer.phar /usr/local/bin/composer
+  else
+    info_msg "Composer is already installed, skipping installation."
   fi
-
-  php composer-setup.php --quiet
-  rm composer-setup.php
-
-  # Move composer to global installation
-  mv composer.phar /usr/local/bin/composer
 }
 
 # Install emailscript composer dependencies
 function run_install_emailscript_composer_deps() {
   cd "$EMAILSCRIPT_DIR" || exit
-  export COMPOSER_ALLOW_SUPERUSER=1
-  php /usr/local/bin/composer install --no-dev --no-plugins
+  if [ ! -d "vendor" ]; then
+    export COMPOSER_ALLOW_SUPERUSER=1
+    php /usr/local/bin/composer install --no-dev --no-plugins
+  else
+    info_msg "Composer dependencies are already installed, skipping installation."
+  fi
 }
 
 # Copy and update emailscript environment variables
 function run_update_emailscript_env() {
   cd "$EMAILSCRIPT_DIR" || exit
-  cp .env.example .env
-  sed -i.bak "s@APP_URL=.*\$@APP_URL=http://$DOMAIN@" .env
-  sed -i.bak "s/DB_CONNECTION=.*$/DB_CONNECTION=mysql" .env
-  sed -i.bak 's/DB_DATABASE=.*$/DB_DATABASE=emailscript/' .env
-  sed -i.bak 's/DB_USERNAME=.*$/DB_USERNAME=emailscript/' .env
-  sed -i.bak "s/DB_PASSWORD=.*\$/DB_PASSWORD=$DB_PASS/" .env
-  # Generate the application key
-  php artisan key:generate --no-interaction --force
+  if [ ! -f ".env" ]; then
+    cp .env.example .env
+    sed -i.bak "s@APP_URL=.*\$@APP_URL=http://$DOMAIN@" .env
+    sed -i.bak "s/DB_CONNECTION=.*$/DB_CONNECTION=mysql/" .env
+    sed -i.bak 's/DB_DATABASE=.*$/DB_DATABASE=emailscript/' .env
+    sed -i.bak 's/DB_USERNAME=.*$/DB_USERNAME=emailscript/' .env
+    sed -i.bak "s/DB_PASSWORD=.*\$/DB_PASSWORD=$DB_PASS/" .env
+    # Generate the application key
+    php artisan key:generate --no-interaction --force
+  else
+    info_msg ".env file already exists, skipping environment setup."
+  fi
 }
 
 # Run the emailscript database migrations and seeders for the first time
 function run_emailscript_database_migrations() {
   cd "$EMAILSCRIPT_DIR" || exit
-  php artisan migrate --no-interaction --force
-  php artisan db:seed --no-interaction --force
+  if ! sudo mysql -u root -e "USE emailscript; SHOW TABLES;" | grep -q migrations; then
+    php artisan migrate --no-interaction --force
+    php artisan db:seed --no-interaction --force
+  else
+    info_msg "Database migrations have already been run, skipping migrations."
+  fi
 }
 
 # Set file and folder permissions
@@ -171,7 +209,8 @@ function run_configure_apache() {
   a2enconf php8.3-fpm
 
   # Set-up the required emailscript apache config
-  cat >/etc/apache2/sites-available/emailscript.conf <<EOL
+  if [ ! -f "/etc/apache2/sites-available/emailscript.conf" ]; then
+    cat >/etc/apache2/sites-available/emailscript.conf <<EOL
 <VirtualHost *:80>
   ServerName ${DOMAIN}
 
@@ -211,14 +250,17 @@ function run_configure_apache() {
 </VirtualHost>
 EOL
 
-  # Disable the default apache site and enable emailscript
-  a2dissite 000-default.conf
-  a2ensite emailscript.conf
+    # Disable the default apache site and enable emailscript
+    a2dissite 000-default.conf
+    a2ensite emailscript.conf
 
-  # Restart apache to load new config
-  systemctl restart apache2
-  # Ensure php-fpm service has started
-  systemctl start php8.3-fpm.service
+    # Restart apache to load new config
+    systemctl restart apache2
+    # Ensure php-fpm service has started
+    systemctl start php8.3-fpm.service
+  else
+    info_msg "Apache configuration for EmailScript already exists, skipping configuration."
+  fi
 }
 
 info_msg "This script logs full output to $LOGPATH which may help upon issues."
