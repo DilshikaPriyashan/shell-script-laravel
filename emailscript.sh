@@ -106,7 +106,7 @@ function run_database_setup() {
 
   # Check if MySQL is already installed
   if [ -d "/var/lib/mysql" ]; then
-    info_msg "MySQL is already installed."
+    echo "MySQL is already installed."
     echo -n "Enter MySQL root password (leave blank if no password is set): "
     read MYSQL_ROOT_PASSWORD
   else
@@ -196,6 +196,15 @@ function run_emailscript_database_migrations() {
   fi
 }
 
+function create_user_and_password() {
+  read -p "Enter user name: " USER_NAME
+  read -p "Enter user email: " USER_EMAIL
+  read -s -p "Enter user password: " USER_PASSWORD
+  echo "" # Move to a new line after hidden input
+
+  php artisan make:filament-user --name="$USER_NAME" --email="$USER_EMAIL" --password="$USER_PASSWORD"
+}
+
 # Set file and folder permissions
 # Sets current user as owner user and www-data as owner group then
 # provides group write access only to required directories.
@@ -282,31 +291,34 @@ info_msg "Installing using the domain or IP \"$DOMAIN\""
 info_msg ""
 sleep 1
 
-info_msg "[1/9] Installing required system packages... (This may take several minutes)"
+info_msg "[1/10] Installing required system packages... (This may take several minutes)"
 run_package_installs >> "$LOGPATH" 2>&1
 
-info_msg "[2/9] Preparing MySQL database..."
-run_database_setup >> "$LOGPATH" 2>&1
+info_msg "[2/10] Preparing MySQL database..."
+run_database_setup
 
-info_msg "[3/9] Downloading EmailScript to ${EMAILSCRIPT_DIR}..."
+info_msg "[3/10] Create user & password..."
+create_user_and_password
+
+info_msg "[4/10] Downloading EmailScript to ${EMAILSCRIPT_DIR}..."
 run_emailscript_download >> "$LOGPATH" 2>&1
 
-info_msg "[4/9] Installing Composer (PHP dependency manager)..."
+info_msg "[5/10] Installing Composer (PHP dependency manager)..."
 run_install_composer >> "$LOGPATH" 2>&1
 
-info_msg "[5/9] Installing PHP dependencies using composer..."
+info_msg "[6/10] Installing PHP dependencies using composer..."
 run_install_emailscript_composer_deps >> "$LOGPATH" 2>&1
 
-info_msg "[6/9] Creating and populating EmailScript .env file..."
+info_msg "[7/10] Creating and populating EmailScript .env file..."
 run_update_emailscript_env >> "$LOGPATH" 2>&1
 
-info_msg "[7/9] Running initial EmailScript database migrations..."
+info_msg "[8/10] Running initial EmailScript database migrations..."
 run_emailscript_database_migrations >> "$LOGPATH" 2>&1
 
-info_msg "[8/9] Setting EmailScript file & folder permissions..."
+info_msg "[9/10] Setting EmailScript file & folder permissions..."
 run_set_application_file_permissions >> "$LOGPATH" 2>&1
 
-info_msg "[9/9] Configuring apache server..."
+info_msg "[10/10] Configuring apache server..."
 run_configure_apache >> "$LOGPATH" 2>&1
 
 info_msg "----------------------------------------------------------------"
