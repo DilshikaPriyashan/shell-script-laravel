@@ -104,12 +104,21 @@ function run_database_setup() {
   systemctl start mariadb.service
   sleep 3
 
+  # Check if MySQL is already installed
+  if [ -d "/var/lib/mysql" ]; then
+    info_msg "MySQL is already installed."
+    echo -n "Enter MySQL root password (leave blank if no password is set): "
+    read MYSQL_ROOT_PASSWORD
+  else
+    MYSQL_ROOT_PASSWORD=""
+  fi
+
   # Check if the database and user already exist
-  if ! sudo mysql -u root -e "USE emailscript;" 2>/dev/null; then
+  if ! sudo mysql -u root ${MYSQL_ROOT_PASSWORD:+-p$MYSQL_ROOT_PASSWORD} -e "USE emailscript;" 2>/dev/null; then
     # Create the required user database, user and permissions in the database
-    sudo mysql -u root --execute="CREATE DATABASE emailscript;"
-    sudo mysql -u root --execute="CREATE USER 'emailscript'@'localhost' IDENTIFIED BY '$DB_PASS';"
-    sudo mysql -u root --execute="GRANT ALL ON emailscript.* TO 'emailscript'@'localhost';FLUSH PRIVILEGES;"
+    sudo mysql -u root ${MYSQL_ROOT_PASSWORD:+-p$MYSQL_ROOT_PASSWORD} --execute="CREATE DATABASE IF NOT EXISTS emailscript;"
+    sudo mysql -u root ${MYSQL_ROOT_PASSWORD:+-p$MYSQL_ROOT_PASSWORD} --execute="CREATE USER IF NOT EXISTS 'emailscript'@'localhost' IDENTIFIED BY '$DB_PASS';"
+    sudo mysql -u root ${MYSQL_ROOT_PASSWORD:+-p$MYSQL_ROOT_PASSWORD} --execute="GRANT ALL PRIVILEGES ON emailscript.* TO 'emailscript'@'localhost'; FLUSH PRIVILEGES;"
   else
     info_msg "Database and user already exist, skipping database setup."
   fi
