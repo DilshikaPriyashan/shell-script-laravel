@@ -197,12 +197,25 @@ function run_emailscript_database_migrations() {
 }
 
 function create_user_and_password() {
+  cd "$EMAILSCRIPT_DIR" || exit
   read -p "Enter user name: " USER_NAME
   read -p "Enter user email: " USER_EMAIL
   read -s -p "Enter user password: " USER_PASSWORD
   echo "" # Move to a new line after hidden input
+  
+  # Validate the inputs
+  if [[ -z "$USER_NAME" || -z "$USER_EMAIL" || -z "$USER_PASSWORD" ]]; then
+    echo "Error: All fields are required."
+    return 1
+  fi
 
-  php artisan make:filament-user --name="$USER_NAME" --email="$USER_EMAIL" --password="$USER_PASSWORD"
+  # Attempt to create the user and check for errors
+  if php artisan make:filament-user --name="$USER_NAME" --email="$USER_EMAIL" --password="$USER_PASSWORD"; then
+    echo "User created successfully."
+  else
+    echo "Failed to create user. Please check the logs for details."
+    return 1
+  fi
 }
 
 # Set file and folder permissions
@@ -297,34 +310,34 @@ run_package_installs >> "$LOGPATH" 2>&1
 info_msg "[2/10] Preparing MySQL database..."
 run_database_setup
 
-info_msg "[3/10] Create user & password..."
-create_user_and_password
-
-info_msg "[4/10] Downloading EmailScript to ${EMAILSCRIPT_DIR}..."
+info_msg "[3/10] Downloading EmailScript to ${EMAILSCRIPT_DIR}..."
 run_emailscript_download >> "$LOGPATH" 2>&1
 
-info_msg "[5/10] Installing Composer (PHP dependency manager)..."
+info_msg "[4/10] Installing Composer (PHP dependency manager)..."
 run_install_composer >> "$LOGPATH" 2>&1
 
-info_msg "[6/10] Installing PHP dependencies using composer..."
+info_msg "[5/10] Installing PHP dependencies using composer..."
 run_install_emailscript_composer_deps >> "$LOGPATH" 2>&1
 
-info_msg "[7/10] Creating and populating EmailScript .env file..."
+info_msg "[6/10] Creating and populating EmailScript .env file..."
 run_update_emailscript_env >> "$LOGPATH" 2>&1
 
-info_msg "[8/10] Running initial EmailScript database migrations..."
+info_msg "[7/10] Running initial EmailScript database migrations..."
 run_emailscript_database_migrations >> "$LOGPATH" 2>&1
 
-info_msg "[9/10] Setting EmailScript file & folder permissions..."
+info_msg "[8/10] Setting EmailScript file & folder permissions..."
 run_set_application_file_permissions >> "$LOGPATH" 2>&1
 
-info_msg "[10/10] Configuring apache server..."
+info_msg "[9/10] Configuring apache server..."
 run_configure_apache >> "$LOGPATH" 2>&1
+
+info_msg "[10/10] Create user & password..."
+create_user_and_password
 
 info_msg "----------------------------------------------------------------"
 info_msg "Setup finished, your EmailScript instance should now be installed!"
-info_msg "- Default login email: admin@admin.com"
-info_msg "- Default login password: password"
+info_msg "- Default login email: $USER_EMAIL"
+info_msg "- Default login password: $USER_PASSWORD"
 info_msg "- Access URL: http://$CURRENT_IP/ or http://$DOMAIN/"
 info_msg "- EmailScript install path: $EMAILSCRIPT_DIR"
 info_msg "- Install script log: $LOGPATH"
